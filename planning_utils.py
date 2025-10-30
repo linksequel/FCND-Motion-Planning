@@ -172,10 +172,198 @@ def a_star(grid, h, start, goal):
         print('**********************') 
     return path[::-1], path_cost
 
+def validate_position(position, grid, position_name="position"):
+    """
+    Validate and adjust a grid position to ensure it's within bounds and not in an obstacle.
 
+    Args:
+        position: tuple (row, col) representing the position in grid coordinates
+        grid: numpy array representing the obstacle grid
+        position_name: string name for logging purposes (e.g., "start", "goal")
+
+    Returns:
+        tuple: validated and potentially adjusted position
+    """
+    validated_pos = position
+
+    # Check if position is outside grid bounds
+    if (position[0] < 0 or position[0] >= grid.shape[0] or
+        position[1] < 0 or position[1] >= grid.shape[1]):
+        print(f"WARNING: {position_name.capitalize()} position is outside grid bounds!")
+        validated_pos = (int(grid.shape[0] / 2), int(grid.shape[1] / 2))
+        print(f"Using grid center as {position_name}:", validated_pos)
+        return validated_pos
+
+    # Check if position is inside an obstacle
+    if grid[position[0], position[1]] == 1:
+        print(f"WARNING: {position_name.capitalize()} position is inside an obstacle!")
+        # Find nearest free space
+        for offset in range(1, 20):
+            for dx in range(-offset, offset + 1):
+                for dy in range(-offset, offset + 1):
+                    new_pos = (position[0] + dx, position[1] + dy)
+                    if (0 <= new_pos[0] < grid.shape[0] and
+                        0 <= new_pos[1] < grid.shape[1] and
+                        grid[new_pos[0], new_pos[1]] == 0):
+                        validated_pos = new_pos
+                        print(f"Adjusted {position_name} to:", validated_pos)
+                        return validated_pos
+
+    return validated_pos
 
 def heuristic(position, goal_position):
     return np.linalg.norm(np.array(position) - np.array(goal_position))
+
+def iterative_astar(grid, h, start, goal, max_iterations=1000):
+    """
+    Iterative Deepening A* (IDA*) search algorithm.
+
+    Uses DFS with an f-value threshold that increases iteratively.
+    Space complexity: O(bd) - linear!
+    Time complexity: O(b^m)
+
+    Args:
+        grid: 2D numpy array representing the environment (0=free, 1=obstacle)
+        h: heuristic function h(position, goal_position)
+        start: tuple (row, col) representing start position
+        goal: tuple (row, col) representing goal position
+        max_iterations: maximum number of iterations to prevent infinite loops (default: 1000)
+
+    Returns:
+        path: list of tuples representing the path from start to goal
+        path_cost: total cost of the path
+    """
+
+    # Check if start or goal is on an obstacle
+    if grid[start[0], start[1]] == 1:
+        print('**********************')
+        print('Start position is on an obstacle!')
+        print('**********************')
+        return [], 0
+
+    if grid[goal[0], goal[1]] == 1:
+        print('**********************')
+        print('Goal position is on an obstacle!')
+        print('**********************')
+        return [], 0
+
+    # Check if start equals goal
+    if start == goal:
+        print('Start equals goal, no path needed.')
+        return [start], 0
+
+    def dfs(node, g_cost, threshold, path, visited):
+        """
+        Depth-first search bounded by f-value threshold.
+
+        Args:
+            node: current node position (row, col)
+            g_cost: cost from start to current node
+            threshold: f-value threshold for this iteration
+            path: current path from start to node
+            visited: set of visited nodes in current DFS branch
+
+        Returns:
+            (found, min_cost, final_path) tuple where:
+                found: True if goal is found
+                min_cost: minimum f-value exceeding threshold (for next iteration)
+                final_path: complete path if found, otherwise None
+        """
+        f_cost = g_cost + h(node, goal)
+
+        # If f-value exceeds threshold, return the f-value for next iteration
+        if f_cost > threshold:
+            return False, f_cost, None
+
+        # Goal found
+        if node == goal:
+            return True, f_cost, path
+
+        # Track minimum f-value that exceeds threshold
+        min_exceeded = float('inf')
+
+        # Explore valid actions
+        for action in valid_actions(grid, node):
+            da = action.delta
+            next_node = (node[0] + da[0], node[1] + da[1])
+
+            # Skip if already in current path (avoid cycles in DFS)
+            if next_node in visited:
+                continue
+
+            # Add to visited set and path
+            visited.add(next_node)
+            new_path = path + [next_node]
+
+            # Recursive DFS call
+            found, cost, result_path = dfs(
+                next_node,
+                g_cost + action.cost,
+                threshold,
+                new_path,
+                visited
+            )
+
+            # Goal found - return immediately
+            if found:
+                return True, cost, result_path
+
+            # Track minimum exceeded f-value for next iteration
+            if cost < min_exceeded:
+                min_exceeded = cost
+
+            # Backtrack: remove from visited set for other branches
+            visited.remove(next_node)
+
+        return False, min_exceeded, None
+
+    # Initialize threshold with heuristic from start
+    threshold = h(start, goal)
+    path = [start]
+
+    iteration = 0
+    prev_threshold = -1  # Track previous threshold to detect no progress
+
+    while True:
+        iteration += 1
+        print(f'IDA* iteration {iteration}, threshold = {threshold:.2f}')
+
+        # Check if maximum iterations exceeded
+        if iteration > max_iterations:
+            print('**********************')
+            print(f'Failed to find a path! Maximum iterations ({max_iterations}) exceeded.')
+            print('This likely means no path exists between start and goal.')
+            print('**********************')
+            return [], 0
+
+        # Perform DFS with current threshold
+        visited = {start}
+        found, next_threshold, result_path = dfs(start, 0, threshold, path, visited)
+
+        if found:
+            print(f'Found a path in {iteration} iterations.')
+            path_cost = next_threshold
+            return result_path, path_cost
+
+        # No path exists if threshold doesn't increase
+        if next_threshold == float('inf'):
+            print('**********************')
+            print('Failed to find a path!')
+            print('No nodes exceed the current threshold - goal is unreachable.')
+            print('**********************')
+            return [], 0
+
+        # Check if threshold is not increasing (stuck in same state)
+        if abs(next_threshold - prev_threshold) < 1e-6:
+            print('**********************')
+            print('Failed to find a path!')
+            print('Threshold stopped increasing - goal may be unreachable.')
+            print('**********************')
+            return [], 0
+
+        # Update threshold for next iteration
+        prev_threshold = threshold
+        threshold = next_threshold
 
 
 def point(p):
@@ -216,4 +404,3 @@ def prune_path(path):
             i += 1
 
     return pruned_path
-

@@ -257,13 +257,13 @@ def main():
     Main function to generate both 2D and 3D visualizations
     """
     print("Loading colliders data...")
-    data, lat0, lon0 = load_colliders('colliders.csv')
+    data, lat0, lon0 = load_colliders('../colliders.csv')
 
     print("\nGenerating 2D visualization...")
-    visualize_2d(data, lat0, lon0, save_path='Logs/colliders_2d.png')
+    visualize_2d(data, lat0, lon0, save_path='../Logs/colliders_2d.png')
 
     print("\nGenerating 3D visualization...")
-    visualize_3d(data, lat0, lon0, save_path='Logs/colliders_3d.png')
+    visualize_3d(data, lat0, lon0, save_path='../Logs/colliders_3d.png')
 
     print("\n" + "="*50)
     print("Visualization complete!")

@@ -2,7 +2,7 @@
 完成规划器后，您可以对其进行测试。通过调整 **grid_start 和 grid_goal** 参数的值，您可以设置无人机的起点和终点。提醒：如果这些点位于文件 colliders.csv 记录的障碍物地图中，搜索算法可能会花费很长时间并无法输出路径。在这种情况下，您最好重置这些参数并再次运行更新后的程序。
 
 
-## 2. 完成3的前置应该是完成仓库中的TODO？
+## 2. 前置任务（已完成）
 1. Line 122: Read lat0, lon0 from colliders.csv first line 第 122 行：从第一行读取 lat0、lon0 colliders.csv 
 2. Line 124: Set home position to (lon0, lat0, 0) 第 124 行：将起始位置设置为 （lon0， lat0， 0） 
 3. Line 126: Retrieve current global position 第 126 行：检索当前全局位置 
@@ -15,7 +15,16 @@
 
 ## 3. HW_1中的任务
 ### 问题 4（20 分）：实现迭代深化 A* 搜索算法
-你需要在 planning_utils.py 中编写一个名为 iterative_astar(grid, h, start, goal) 的迭代深化 A* 搜索算法，以帮助无人机规划路线。迭代深化 A* 搜索算法的具体流程可在课程幻灯片中找到。
+你需要在 planning_utils.py 中编写一个名为 iterative_astar(grid, h, start, goal) 的迭代深化 A* 搜索算法，以帮助无人机规划路线。迭代深化 A* 搜索算法：
+#### Iterative Deepening A*
+- **Key idea**: get DFS’s space advantage by repeating DFS. Unlike iterative deepening search constrained by the maximum depth at t-th iteration, here only nodes with $ f(n) \leq f^*_{t-1} $ are expanded. $ f^*_{t-1} $ is the smallest cost at last iteration.
+- **Implementation**:
+  - for iteration $\ t$ = 0,1, $\dots$)
+    - Perform a depth-first search by only expanding $n$ with $ f(n) \leq f^*_{t-1} $
+- **Completeness**: yes
+- **Optimality**: yes
+- **Time complexity**: \( O(b^m) \).
+- **Space complexity**: \( O(bd) \), linear!
 
 ### 问题 5（20 分）：为 A* 实现不同的启发式算法，以及遍历 3 个固定点的 A* 搜索
 在 planning_utils.py 中，当前版本的 A* 算法使用曼哈顿距离作为启发式算法。我们鼓励你提出一个有效的启发式算法，并实现它，然后观察规划路线的变化。

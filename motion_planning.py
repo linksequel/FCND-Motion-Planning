@@ -5,7 +5,7 @@ from enum import Enum, auto
 
 import numpy as np
 
-from planning_utils import a_star, heuristic, create_grid, prune_path
+from planning_utils import a_star, heuristic, create_grid, prune_path, validate_position
 from udacidrone import Drone
 from udacidrone.connection import MavlinkConnection
 from udacidrone.messaging import MsgID
@@ -118,45 +118,6 @@ class MotionPlanning(Drone):
         data = msgpack.dumps(self.waypoints)
         self.connection._master.write(data)
 
-    def validate_position(self, position, grid, position_name="position"):
-        """
-        Validate and adjust a grid position to ensure it's within bounds and not in an obstacle.
-
-        Args:
-            position: tuple (row, col) representing the position in grid coordinates
-            grid: numpy array representing the obstacle grid
-            position_name: string name for logging purposes (e.g., "start", "goal")
-
-        Returns:
-            tuple: validated and potentially adjusted position
-        """
-        validated_pos = position
-
-        # Check if position is outside grid bounds
-        if (position[0] < 0 or position[0] >= grid.shape[0] or
-            position[1] < 0 or position[1] >= grid.shape[1]):
-            print(f"WARNING: {position_name.capitalize()} position is outside grid bounds!")
-            validated_pos = (int(grid.shape[0] / 2), int(grid.shape[1] / 2))
-            print(f"Using grid center as {position_name}:", validated_pos)
-            return validated_pos
-
-        # Check if position is inside an obstacle
-        if grid[position[0], position[1]] == 1:
-            print(f"WARNING: {position_name.capitalize()} position is inside an obstacle!")
-            # Find nearest free space
-            for offset in range(1, 20):
-                for dx in range(-offset, offset + 1):
-                    for dy in range(-offset, offset + 1):
-                        new_pos = (position[0] + dx, position[1] + dy)
-                        if (0 <= new_pos[0] < grid.shape[0] and
-                            0 <= new_pos[1] < grid.shape[1] and
-                            grid[new_pos[0], new_pos[1]] == 0):
-                            validated_pos = new_pos
-                            print(f"Adjusted {position_name} to:", validated_pos)
-                            return validated_pos
-
-        return validated_pos
-
     def plan_path(self):
         self.flight_state = States.PLANNING
         print("Searching for a path ...")
@@ -217,8 +178,8 @@ class MotionPlanning(Drone):
         print("Grid goal:", grid_goal)
 
         # Validate start and goal positions using the abstracted method
-        grid_start = self.validate_position(grid_start, grid, "start")
-        grid_goal = self.validate_position(grid_goal, grid, "goal")
+        grid_start = validate_position(grid_start, grid, "start")
+        grid_goal = validate_position(grid_goal, grid, "goal")
 
         # Run A* to find a path from start to goal
         # DONE: add diagonal motions with a cost of sqrt(2) to your A* implementation 在planning_utils.Action中实现
