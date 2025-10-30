@@ -136,22 +136,31 @@ class MotionPlanning(Drone):
         self.set_home_position(lon0, lat0, 0)
 
         # TODO: retrieve current global position
+        # 无人机现在所处的位置（经纬度）
         global_position = self.global_position
 
         # TODO: convert to current local position using global_to_local()
-        local_position = global_to_local(global_position, self.global_home)
+        # 当前位置经纬度 -> 相对home的loca坐标（单位为米）
+        relative_pos_from_home = global_to_local(global_position, self.global_home)
 
-        print('global home {0}, position {1}, local position {2}'.format(self.global_home, self.global_position,
+        print('home global:{0}, current position:{1}, local position {2}'.format(self.global_home, self.global_position,
                                                                          self.local_position))
+        # 两者理论上应该非常接近（都表示无人机相对于home点的位置），但self.local_position是实时更新的传感器数据，而global_to_local()是基于GPS坐标的手动计算结果。
+        print("should be closer param:", relative_pos_from_home - self.local_position)
         # Read in obstacle map
         data = np.loadtxt('colliders.csv', delimiter=',', dtype='float64', skiprows=2)
 
         # Define a grid for a particular altitude and safety margin around obstacles
+        # north_offset也是相对home，单位为米
         grid, north_offset, east_offset = create_grid(data, TARGET_ALTITUDE, SAFETY_DISTANCE)
         print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
         # Define starting point on the grid (this is just grid center)
         # TODO: convert start position to current position rather than map center
-        grid_start = (int(local_position[0]) - north_offset, int(local_position[1]) - east_offset)
+        # 相当于存在三个坐标系：
+        # 1.经纬度坐标系
+        # 2.colliders.csv中的以home为中心的相对坐标系（local_position、north min的概念都是基于此坐标系）
+        # 3.网格坐标系grid 这里的grid（0，0）应该是(north_min, east_min)
+        grid_start = (int(relative_pos_from_home[0]) - north_offset, int(relative_pos_from_home[1]) - east_offset)
 
         # Set goal as some arbitrary position on the grid
         # TODO: adapt to set goal as latitude / longitude position and convert
