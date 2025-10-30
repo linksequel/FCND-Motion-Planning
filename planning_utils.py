@@ -108,8 +108,18 @@ def valid_actions(grid, current_node):
             valid_actions.remove(Action.SOUTH_EAST)
 
     return valid_actions
-
-
+'''
+while 队列不为空:
+    1. 取出f值最小的节点(current_node)
+    2. 如果是目标节点 → 找到路径，结束
+    3. 否则，遍历所有可行动作:
+       - 计算邻居节点(next_node)
+       - 计算总代价f = g(实际代价) + h(启发式代价)
+       - 如果节点未访问过:
+         * 标记为已访问
+         * 记录分支信息{next_node: (cost, parent, action)}
+         * 加入优先队列
+'''
 def a_star(grid, h, start, goal):
 
     path = []
@@ -117,7 +127,8 @@ def a_star(grid, h, start, goal):
     queue = PriorityQueue()
     queue.put((0, start))
     visited = set(start)
-
+    # 格式: {节点: (代价, 父节点, 动作)}
+    # 即: {node: (cost, parent_node, action)}
     branch = {}
     found = False
     

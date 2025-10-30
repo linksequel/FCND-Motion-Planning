@@ -118,6 +118,45 @@ class MotionPlanning(Drone):
         data = msgpack.dumps(self.waypoints)
         self.connection._master.write(data)
 
+    def validate_position(self, position, grid, position_name="position"):
+        """
+        Validate and adjust a grid position to ensure it's within bounds and not in an obstacle.
+
+        Args:
+            position: tuple (row, col) representing the position in grid coordinates
+            grid: numpy array representing the obstacle grid
+            position_name: string name for logging purposes (e.g., "start", "goal")
+
+        Returns:
+            tuple: validated and potentially adjusted position
+        """
+        validated_pos = position
+
+        # Check if position is outside grid bounds
+        if (position[0] < 0 or position[0] >= grid.shape[0] or
+            position[1] < 0 or position[1] >= grid.shape[1]):
+            print(f"WARNING: {position_name.capitalize()} position is outside grid bounds!")
+            validated_pos = (int(grid.shape[0] / 2), int(grid.shape[1] / 2))
+            print(f"Using grid center as {position_name}:", validated_pos)
+            return validated_pos
+
+        # Check if position is inside an obstacle
+        if grid[position[0], position[1]] == 1:
+            print(f"WARNING: {position_name.capitalize()} position is inside an obstacle!")
+            # Find nearest free space
+            for offset in range(1, 20):
+                for dx in range(-offset, offset + 1):
+                    for dy in range(-offset, offset + 1):
+                        new_pos = (position[0] + dx, position[1] + dy)
+                        if (0 <= new_pos[0] < grid.shape[0] and
+                            0 <= new_pos[1] < grid.shape[1] and
+                            grid[new_pos[0], new_pos[1]] == 0):
+                            validated_pos = new_pos
+                            print(f"Adjusted {position_name} to:", validated_pos)
+                            return validated_pos
+
+        return validated_pos
+
     def plan_path(self):
         self.flight_state = States.PLANNING
         print("Searching for a path ...")
@@ -125,21 +164,27 @@ class MotionPlanning(Drone):
         SAFETY_DISTANCE = 5
 
         self.target_position[2] = TARGET_ALTITUDE
+        '''
+        相当于存在三个坐标系：
+        1.经纬度坐标系
+        2.colliders.csv中的以home为中心的相对坐标系（local_position、north min的概念都是基于此坐标系） 符合地理方位（上北下南左西右东）
+        3.网格坐标系grid 这里的grid（0，0）应该是(north_min, east_min) 抽象二维数组吗，跟地理方位无关了，行增加代表更北方，列增加代表更东方
+        '''
 
-        # TODO: read lat0, lon0 from colliders into floating point values
+        # DONE: read lat0, lon0 from colliders into floating point values
         with open('colliders.csv') as f:
             first_line = f.readline()
         lat0, lon0 = first_line.replace('lat0', '').replace('lon0', '').replace(',', '').split()
         lat0, lon0 = float(lat0), float(lon0)
 
-        # TODO: set home position to (lon0, lat0, 0)
+        # DONE: set home position to (lon0, lat0, 0)
         self.set_home_position(lon0, lat0, 0)
 
-        # TODO: retrieve current global position
+        # DONE: retrieve current global position
         # 无人机现在所处的位置（经纬度）
         global_position = self.global_position
 
-        # TODO: convert to current local position using global_to_local()
+        # DONE: convert to current local position using global_to_local()
         # 当前位置经纬度 -> 相对home的loca坐标（单位为米）
         relative_pos_from_home = global_to_local(global_position, self.global_home)
 
@@ -155,17 +200,11 @@ class MotionPlanning(Drone):
         grid, north_offset, east_offset = create_grid(data, TARGET_ALTITUDE, SAFETY_DISTANCE)
         print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
         # Define starting point on the grid (this is just grid center)
-        # TODO: convert start position to current position rather than map center
-        # 相当于存在三个坐标系：
-        # 1.经纬度坐标系
-        # 2.colliders.csv中的以home为中心的相对坐标系（local_position、north min的概念都是基于此坐标系）
-        # 3.网格坐标系grid 这里的grid（0，0）应该是(north_min, east_min)
+        # DONE: convert start position to current position rather than map center
         grid_start = (int(relative_pos_from_home[0]) - north_offset, int(relative_pos_from_home[1]) - east_offset)
 
         # Set goal as some arbitrary position on the grid
-        # TODO: adapt to set goal as latitude / longitude position and convert
-        # Example: Set goal to (lat, lon, alt) and convert to local coordinates
-        # For now using an arbitrary position, but you can set goal_lat, goal_lon and convert
+        # DONE: adapt to set YOUR goal as latitude / longitude position and convert
         goal_lat = 37.793480  # Example latitude (about 100m north)
         goal_lon = -122.396450  # Example longitude (about 100m east)
         goal_global = [goal_lon, goal_lat, 0]
@@ -177,59 +216,17 @@ class MotionPlanning(Drone):
         print("Grid start:", grid_start)
         print("Grid goal:", grid_goal)
 
-        # Check if start is valid
-        if grid_start[0] < 0 or grid_start[0] >= grid.shape[0] or grid_start[1] < 0 or grid_start[1] >= grid.shape[1]:
-            print("WARNING: Start position is outside grid bounds!")
-            grid_start = (int(grid.shape[0] / 2), int(grid.shape[1] / 2))
-            print("Using grid center as start:", grid_start)
-        elif grid[grid_start[0], grid_start[1]] == 1:
-            print("WARNING: Start position is inside an obstacle!")
-            # Find nearest free space
-            for offset in range(1, 20):
-                for dx in range(-offset, offset+1):
-                    for dy in range(-offset, offset+1):
-                        new_start = (grid_start[0] + dx, grid_start[1] + dy)
-                        if (0 <= new_start[0] < grid.shape[0] and
-                            0 <= new_start[1] < grid.shape[1] and
-                            grid[new_start[0], new_start[1]] == 0):
-                            grid_start = new_start
-                            print("Adjusted start to:", grid_start)
-                            break
-                    if grid[grid_start[0], grid_start[1]] == 0:
-                        break
-                if grid[grid_start[0], grid_start[1]] == 0:
-                    break
-
-        # Check if goal is valid
-        if grid_goal[0] < 0 or grid_goal[0] >= grid.shape[0] or grid_goal[1] < 0 or grid_goal[1] >= grid.shape[1]:
-            print("WARNING: Goal position is outside grid bounds!")
-            grid_goal = (int(grid.shape[0] / 2) + 10, int(grid.shape[1] / 2) + 10)
-            print("Using adjusted goal:", grid_goal)
-        elif grid[grid_goal[0], grid_goal[1]] == 1:
-            print("WARNING: Goal position is inside an obstacle!")
-            # Find nearest free space
-            for offset in range(1, 20):
-                for dx in range(-offset, offset+1):
-                    for dy in range(-offset, offset+1):
-                        new_goal = (grid_goal[0] + dx, grid_goal[1] + dy)
-                        if (0 <= new_goal[0] < grid.shape[0] and
-                            0 <= new_goal[1] < grid.shape[1] and
-                            grid[new_goal[0], new_goal[1]] == 0):
-                            grid_goal = new_goal
-                            print("Adjusted goal to:", grid_goal)
-                            break
-                    if grid[grid_goal[0], grid_goal[1]] == 0:
-                        break
-                if grid[grid_goal[0], grid_goal[1]] == 0:
-                    break
+        # Validate start and goal positions using the abstracted method
+        grid_start = self.validate_position(grid_start, grid, "start")
+        grid_goal = self.validate_position(grid_goal, grid, "goal")
 
         # Run A* to find a path from start to goal
-        # TODO: add diagonal motions with a cost of sqrt(2) to your A* implementation
+        # DONE: add diagonal motions with a cost of sqrt(2) to your A* implementation 在planning_utils.Action中实现
         # or move to a different search space such as a graph (not done here)
         print('Local Start and Goal: ', grid_start, grid_goal)
         path, _ = a_star(grid, heuristic, grid_start, grid_goal)
-        # TODO: prune path to minimize number of waypoints
-        # TODO (if you're feeling ambitious): Try a different approach altogether!
+        # DONE: prune path to minimize number of waypoints
+        # ? (if you're feeling ambitious): Try a different approach altogether!
         print('Original path length:', len(path))
         path = prune_path(path)
         print('Pruned path length:', len(path))
@@ -238,7 +235,7 @@ class MotionPlanning(Drone):
         waypoints = [[p[0] + north_offset, p[1] + east_offset, TARGET_ALTITUDE, 0] for p in path]
         # Set self.waypoints
         self.waypoints = waypoints
-        # TODO: send waypoints to sim (this is just for visualization of waypoints)
+        # DONE: send waypoints to sim (this is just for visualization of waypoints)
         self.send_waypoints()
 
     def start(self):
