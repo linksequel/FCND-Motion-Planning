@@ -68,23 +68,29 @@ def plot_path(ax, path, north_offset, east_offset, label='Path', **kwargs):
             alpha=alpha*0.8, zorder=5)
 
 
-def plot_markers(ax, grid_start, grid_goal, north_offset, east_offset, show_home=True):
+def plot_markers(ax, grid_start, grid_goal, north_offset, east_offset, show_home=True, custom_point=None):
     """Plot start, goal, and home markers."""
     start_north, start_east = grid_to_local(grid_start, (north_offset, east_offset))
     goal_north, goal_east = grid_to_local(grid_goal, (north_offset, east_offset))
 
-    # Start (green)
-    ax.plot(start_east, start_north, 'g*', markersize=25, label='Start',
-            zorder=10, markeredgecolor='darkgreen', markeredgewidth=2)
+    # Start (green hollow circle)
+    ax.plot(start_east, start_north, 'go', markersize=18, label='Start',
+            zorder=10, markerfacecolor='none', markeredgecolor='darkgreen', markeredgewidth=3)
 
-    # Goal (red)
-    ax.plot(goal_east, goal_north, 'r*', markersize=25, label='Goal',
-            zorder=10, markeredgecolor='darkred', markeredgewidth=2)
+    # Goal (red hollow circle)
+    ax.plot(goal_east, goal_north, 'ro', markersize=18, label='Goal',
+            zorder=10, markerfacecolor='none', markeredgecolor='darkred', markeredgewidth=3)
 
-    # Home (blue)
+    # Home (blue hollow circle)
     if show_home:
-        ax.plot(0, 0, 'b*', markersize=20, label='Home',
-                zorder=10, markeredgecolor='darkblue', markeredgewidth=1.5)
+        ax.plot(0, 0, 'bo', markersize=15, label='Home',
+                zorder=10, markerfacecolor='none', markeredgecolor='darkblue', markeredgewidth=2.5)
+
+    # Custom point (small purple cross marker to show actual point size)
+    if custom_point is not None:
+        custom_north, custom_east = grid_to_local(custom_point, (north_offset, east_offset))
+        ax.plot(custom_east, custom_north, 'x', markersize=10, label='Custom',
+                zorder=11, color='purple', markeredgewidth=2.5)
 
 
 def add_compass(ax, east_min, east_max, north_min, north_max):
@@ -119,7 +125,8 @@ def format_axis(ax, title, show_colorbar=False, max_height=200):
 
 
 def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
-                      grid_goal, path_cost=None, save_path='../Logs/path_visualization.png'):
+                      grid_goal, path_cost=None, save_path='../Logs/path_visualization.png',
+                      custom_point=None):
     """
     Visualize 2D obstacle map with planned path.
 
@@ -133,6 +140,7 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
         grid_goal: Goal position in grid coordinates
         path_cost: Optional total path cost
         save_path: Path to save visualization image
+        custom_point: Optional custom point to mark on the map (grid coordinates)
     """
     fig, ax = plt.subplots(figsize=(16, 14))
 
@@ -142,7 +150,7 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
     # Plot components
     plot_obstacles(ax, data)
     plot_path(ax, path, north_offset, east_offset, label='Path')
-    plot_markers(ax, grid_start, grid_goal, north_offset, east_offset)
+    plot_markers(ax, grid_start, grid_goal, north_offset, east_offset, custom_point=custom_point)
     add_compass(ax, east_min, east_max, north_min, north_max)
 
     # Format
@@ -180,6 +188,13 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
                 textcoords='offset points', fontsize=12, color='darkred', weight='bold',
                 arrowprops=dict(arrowstyle='->', color='darkred', lw=2),
                 bbox=dict(boxstyle='round,pad=0.5', facecolor='lightcoral', alpha=0.8))
+
+    if custom_point is not None:
+        custom_north, custom_east = grid_to_local(custom_point, (north_offset, east_offset))
+        ax.annotate('CUSTOM', xy=(custom_east, custom_north), xytext=(-30, 20),
+                    textcoords='offset points', fontsize=12, color='purple', weight='bold',
+                    arrowprops=dict(arrowstyle='->', color='purple', lw=2),
+                    bbox=dict(boxstyle='round,pad=0.5', facecolor='plum', alpha=0.8))
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -246,6 +261,9 @@ def main():
     grid_start = validate_position(grid_start, grid, "start")
     grid_goal = validate_position(grid_goal, grid, "goal")
 
+    # Get custom point from user
+    custom_point = (427, 532)
+
     # Find path
     print(f"\nFinding path from {grid_start} to {grid_goal}...")
     path, path_cost = a_star(grid, heuristic, grid_start, grid_goal)
@@ -264,7 +282,7 @@ def main():
     # Visualize
     print("\nGenerating visualizations...")
     visualize_path_2d(data, grid, north_offset, east_offset, path,
-                      grid_start, grid_goal, path_cost)
+                      grid_start, grid_goal, path_cost, custom_point=custom_point)
     visualize_path_comparison(data, grid, north_offset, east_offset,
                               path, path_pruned, grid_start, grid_goal)
 
