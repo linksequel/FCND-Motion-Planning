@@ -111,16 +111,10 @@ def plot_intermediate_waypoints(ax, intermediate_waypoints, north_offset, east_o
     for i, wp in enumerate(intermediate_waypoints):
         wp_north, wp_east = grid_to_local(wp, (north_offset, east_offset))
 
-        # Plot waypoint marker (orange diamond)
-        ax.plot(wp_east, wp_north, 'D', markersize=14,
-                color='orange', markeredgecolor='darkorange', markeredgewidth=2.5,
+        # Plot waypoint marker (orange diamond, smaller size)
+        ax.plot(wp_east, wp_north, 'D', markersize=6,
+                color='orange', markeredgecolor='darkorange', markeredgewidth=1.5,
                 label='Intermediate WP' if i == 0 else '', zorder=11)
-
-        # Add number annotation
-        ax.annotate(f'WP{i+1}', xy=(wp_east, wp_north), xytext=(15, 15),
-                    textcoords='offset points', fontsize=10, color='darkorange', weight='bold',
-                    bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow', alpha=0.9, edgecolor='orange'),
-                    zorder=12)
 
 
 def plot_markers(ax, grid_start, grid_goal, north_offset, east_offset, show_home=True, custom_point=None):

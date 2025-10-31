@@ -51,14 +51,25 @@ def calculate_boundaries(data, safety_distance=5):
     return north_min, north_max, east_min, east_max
 
 
-def visualize_2d(data, lat0, lon0, save_path='colliders_2d.png'):
+def visualize_2d(data, lat0, lon0, save_path='colliders_2d.png', interactive=False):
     """
     Create 2D top-down view of obstacles
+
+    Args:
+        data: Obstacle data array
+        lat0: Home latitude
+        lon0: Home longitude
+        save_path: Path to save the image
+        interactive: If True, allows clicking to get grid coordinates
     """
     fig, ax = plt.subplots(figsize=(14, 12))
 
     # Calculate boundaries
     north_min, north_max, east_min, east_max = calculate_boundaries(data)
+
+    # Calculate grid offsets (same as in create_grid)
+    north_offset = int(np.floor(north_min))
+    east_offset = int(np.floor(east_min))
 
     # Plot each obstacle as a rectangle
     for i in range(data.shape[0]):
@@ -141,10 +152,59 @@ def visualize_2d(data, lat0, lon0, save_path='colliders_2d.png'):
     ax.text(compass_e, compass_n + arrow_len + 30, 'N', fontsize=14,
            weight='bold', color='red', ha='center', zorder=15)
 
+    # Add click event handler for interactive mode
+    if interactive:
+        # Store last clicked point marker
+        clicked_marker = [None]
+
+        def onclick(event):
+            """Handle mouse click events to show grid coordinates"""
+            if event.inaxes != ax:
+                return
+
+            # Get local coordinates (NED frame)
+            local_east = event.xdata
+            local_north = event.ydata
+
+            # Convert to grid coordinates
+            grid_row = int(local_north - north_offset)
+            grid_col = int(local_east - east_offset)
+
+            # Print coordinates
+            print(f"\n{'='*60}")
+            print(f"Clicked Position:")
+            print(f"  Local NED:  North = {local_north:8.2f}, East = {local_east:8.2f}")
+            print(f"  Grid coords: ({grid_row}, {grid_col})")
+            print(f"{'='*60}")
+
+            # Remove previous marker if exists
+            if clicked_marker[0] is not None:
+                clicked_marker[0].remove()
+
+            # Add marker at clicked position
+            clicked_marker[0], = ax.plot(local_east, local_north, 'mx',
+                                        markersize=15, markeredgewidth=3,
+                                        label='Last Click', zorder=20)
+
+            # Update legend
+            ax.legend(loc='upper right', fontsize=10)
+            fig.canvas.draw()
+
+        # Connect the click event
+        fig.canvas.mpl_connect('button_press_event', onclick)
+        print("\n" + "="*60)
+        print("INTERACTIVE MODE: Click on the map to get grid coordinates")
+        print("Close the window when done")
+        print("="*60)
+
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"2D visualization saved to: {save_path}")
-    plt.close()
+
+    if interactive:
+        plt.show()  # Keep window open in interactive mode
+    else:
+        plt.close()  # Close immediately in non-interactive mode
 
 
 def visualize_3d(data, lat0, lon0, save_path='colliders_3d.png'):
@@ -256,21 +316,31 @@ def main():
     """
     Main function to generate both 2D and 3D visualizations
     """
+    # Set to True to enable interactive clicking mode
+    # Set to False to just generate static images
+    interactive = True
+
     print("Loading colliders data...")
     data, lat0, lon0 = load_colliders('../colliders.csv')
 
-    print("\nGenerating 2D visualization...")
-    visualize_2d(data, lat0, lon0, save_path='../Logs/colliders_2d.png')
+    if interactive:
+        print("\nGenerating interactive 2D visualization...")
+        print("Click on the map to get grid coordinates")
+        visualize_2d(data, lat0, lon0, save_path='../Logs/colliders_2d.png',
+                    interactive=True)
+    else:
+        print("\nGenerating 2D visualization...")
+        visualize_2d(data, lat0, lon0, save_path='../Logs/colliders_2d.png')
 
-    print("\nGenerating 3D visualization...")
-    visualize_3d(data, lat0, lon0, save_path='../Logs/colliders_3d.png')
+        print("\nGenerating 3D visualization...")
+        visualize_3d(data, lat0, lon0, save_path='../Logs/colliders_3d.png')
 
-    print("\n" + "="*50)
-    print("Visualization complete!")
-    print("Files saved:")
-    print("  - colliders_2d.png (top-down view)")
-    print("  - colliders_3d.png (3D perspective)")
-    print("="*50)
+        print("\n" + "="*50)
+        print("Visualization complete!")
+        print("Files saved:")
+        print("  - colliders_2d.png (top-down view)")
+        print("  - colliders_3d.png (3D perspective)")
+        print("="*50)
 
 
 if __name__ == '__main__':

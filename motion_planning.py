@@ -170,10 +170,9 @@ class MotionPlanning(Drone):
             use_multi_waypoint: Whether to use multi-waypoint planning (default: True)
 
         Returns:
-            tuple: (path, intermediate_waypoints_grid, intermediate_waypoints_global)
+            tuple: (path, intermediate_waypoints_grid)
                 - path: List of waypoints in grid coordinates
                 - intermediate_waypoints_grid: List of intermediate waypoints in grid coordinates (or None)
-                - intermediate_waypoints_global: List of intermediate waypoints in global coordinates (or None)
         """
         # Choose heuristic function
         # Options: heuristic (Euclidean), heuristic_manhattan, heuristic_diagonal, heuristic_chebyshev
@@ -187,23 +186,22 @@ class MotionPlanning(Drone):
             # ============================================================
             print("\n=== Multi-Waypoint Path Planning ===")
 
-            # Define intermediate waypoints (in lon/lat coordinates)
-            # IMPORTANT: Format is [longitude, latitude, altitude] to match global_to_local() requirements
+            # Define intermediate waypoints directly in grid coordinates
+            # Format is (row, col) in grid coordinates
             # These points are chosen to create an interesting path through the environment
-            intermediate_waypoints_global = [
-                [-122.397250, 37.792980, 0],  # Waypoint 1: slightly north and west
-                [-122.396950, 37.793280, 0],  # Waypoint 2: further north and east
-                [-122.396650, 37.793380, 0],  # Waypoint 3: even further north and east
+            intermediate_waypoints_grid = [
+                (200, 500),  # Waypoint 1
+                (250, 700),  # Waypoint 2
+                (300, 680),  # Waypoint 3
             ]
 
-            # Convert intermediate waypoints from global to grid coordinates
-            intermediate_waypoints_grid = []
-            for i, wp_global in enumerate(intermediate_waypoints_global):
-                wp_local = global_to_local(wp_global, self.global_home)
-                wp_grid = (int(wp_local[0]) - north_offset, int(wp_local[1]) - east_offset)
+            # Validate intermediate waypoints
+            validated_waypoints = []
+            for i, wp_grid in enumerate(intermediate_waypoints_grid):
                 wp_grid = validate_position(wp_grid, grid, f"intermediate_waypoint_{i+1}")
-                intermediate_waypoints_grid.append(wp_grid)
-                print(f"Intermediate waypoint {i+1}: Global (lon={wp_global[0]:.6f}, lat={wp_global[1]:.6f}) -> Grid {wp_grid}")
+                validated_waypoints.append(wp_grid)
+                print(f"Intermediate waypoint {i+1}: Grid {wp_grid}")
+            intermediate_waypoints_grid = validated_waypoints
 
             print(f"Will traverse {len(intermediate_waypoints_grid)} intermediate waypoints")
 
@@ -231,9 +229,8 @@ class MotionPlanning(Drone):
 
             # No intermediate waypoints in standard mode
             intermediate_waypoints_grid = None
-            intermediate_waypoints_global = None
 
-        return path, intermediate_waypoints_grid, intermediate_waypoints_global
+        return path, intermediate_waypoints_grid
 
 
     def plan_path(self):
@@ -303,7 +300,7 @@ class MotionPlanning(Drone):
         '''
         # ============================================================
         USE_MULTI_WAYPOINT = True
-        path, intermediate_waypoints_grid, intermediate_waypoints_global = self._execute_path_planning(
+        path, intermediate_waypoints_grid = self._execute_path_planning(
             grid=grid,
             grid_start=grid_start,
             grid_goal=grid_goal,
