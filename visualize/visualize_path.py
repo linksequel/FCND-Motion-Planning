@@ -4,6 +4,7 @@ Provides functions to visualize planned paths on 2D obstacle maps.
 """
 
 import os
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -23,8 +24,8 @@ def get_project_path(*paths):
         Absolute path to the file
 
     Example:
-        >>> get_project_path('Logs', 'path.png')
-        'C:/Users/.../FCND-Motion-Planning/Logs/path.png'
+        path = get_project_path('Logs', 'path.png')
+        path.endswith(os.path.join('FCND-Motion-Planning', 'Logs', 'path.png'))
     """
     # Get the directory where this script is located (visualize/)
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -94,6 +95,34 @@ def plot_path(ax, path, north_offset, east_offset, label='Path', **kwargs):
             alpha=alpha*0.8, zorder=5)
 
 
+def plot_intermediate_waypoints(ax, intermediate_waypoints, north_offset, east_offset):
+    """
+    Plot intermediate waypoints as distinct markers.
+
+    Args:
+        ax: Matplotlib axis
+        intermediate_waypoints: List of waypoint tuples in grid coordinates
+        north_offset: North offset of grid origin
+        east_offset: East offset of grid origin
+    """
+    if intermediate_waypoints is None or len(intermediate_waypoints) == 0:
+        return
+
+    for i, wp in enumerate(intermediate_waypoints):
+        wp_north, wp_east = grid_to_local(wp, (north_offset, east_offset))
+
+        # Plot waypoint marker (orange diamond)
+        ax.plot(wp_east, wp_north, 'D', markersize=14,
+                color='orange', markeredgecolor='darkorange', markeredgewidth=2.5,
+                label='Intermediate WP' if i == 0 else '', zorder=11)
+
+        # Add number annotation
+        ax.annotate(f'WP{i+1}', xy=(wp_east, wp_north), xytext=(15, 15),
+                    textcoords='offset points', fontsize=10, color='darkorange', weight='bold',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow', alpha=0.9, edgecolor='orange'),
+                    zorder=12)
+
+
 def plot_markers(ax, grid_start, grid_goal, north_offset, east_offset, show_home=True, custom_point=None):
     """Plot start, goal, and home markers."""
     start_north, start_east = grid_to_local(grid_start, (north_offset, east_offset))
@@ -152,7 +181,7 @@ def format_axis(ax, title, show_colorbar=False, max_height=200):
 
 def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
                       grid_goal, path_cost=None, save_path=None,
-                      custom_point=None):
+                      custom_point=None, intermediate_waypoints=None, show=True):
     """
     Visualize 2D obstacle map with planned path.
 
@@ -167,11 +196,14 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
         path_cost: Optional total path cost
         save_path: Path to save visualization image (default: Logs/path_visualization.png)
         custom_point: Optional custom point to mark on the map (grid coordinates)
+        intermediate_waypoints: Optional list of intermediate waypoints in grid coordinates
+        show: Whether to display the plot window (default: True). Set to False to only save the image.
     """
     if save_path is None:
         save_path = get_project_path('Logs', 'path_visualization.png')
 
-    fig, ax = plt.subplots(figsize=(16, 14))
+    # Reduced figure size for faster saving (was 16x14)
+    fig, ax = plt.subplots(figsize=(12, 10))
 
     # Calculate boundaries
     north_min, north_max, east_min, east_max = calculate_boundaries(data)
@@ -180,6 +212,7 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
     plot_obstacles(ax, data)
     plot_path(ax, path, north_offset, east_offset, label='Path')
     plot_markers(ax, grid_start, grid_goal, north_offset, east_offset, custom_point=custom_point)
+    plot_intermediate_waypoints(ax, intermediate_waypoints, north_offset, east_offset)
     add_compass(ax, east_min, east_max, north_min, north_max)
 
     # Format
@@ -194,6 +227,8 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
         ]
         if path_cost is not None:
             info_lines.append(f'- Path Cost: {path_cost:.2f}')
+        if intermediate_waypoints is not None and len(intermediate_waypoints) > 0:
+            info_lines.append(f'- Intermediate WPs: {len(intermediate_waypoints)}')
         info_lines.extend([
             f'- Start: ({grid_start[0]}, {grid_start[1]})',
             f'- Goal: ({grid_goal[0]}, {grid_goal[1]})',
@@ -226,9 +261,13 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
                     bbox=dict(boxstyle='round,pad=0.5', facecolor='plum', alpha=0.8))
 
     plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, dpi=500, bbox_inches='tight')
     print(f"Path visualization saved to: {save_path}")
-    plt.show()
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)  # Close the figure to free memory when not showing
 
 
 def visualize_path_comparison(data, grid, north_offset, east_offset,
@@ -375,76 +414,124 @@ def visualize_path_comparison_3methods(grid, path_original, path_collinear, path
     plt.show()
 
 
+def load_planning_config():
+    """
+    Load planning configuration from saved JSON file.
+    If file doesn't exist, return default configuration.
+    """
+    import json
+
+    planning_data_path = get_project_path('Logs', 'planning_data.json')
+
+    if not os.path.exists(planning_data_path):
+        print(f"No saved planning data found at {planning_data_path}")
+        print("Using default configuration...")
+
+        # Default configuration (grid coordinates for example scenario)
+        config = {
+            'grid_start': (316, 445),
+            'grid_goal': (427, 532),
+            'intermediate_waypoints_grid': None,
+            'north_offset': -316,
+            'east_offset': -445,
+            'use_multi_waypoint': False,
+            'target_altitude': 5,
+            'safety_distance': 5,
+            'timestamp': 'default'
+        }
+        return config
+
+    with open(planning_data_path, 'r') as f:
+        config = json.load(f)
+
+    # Convert lists back to tuples
+    config['grid_start'] = tuple(config['grid_start'])
+    config['grid_goal'] = tuple(config['grid_goal'])
+    if config['intermediate_waypoints_grid']:
+        config['intermediate_waypoints_grid'] = [tuple(wp) for wp in config['intermediate_waypoints_grid']]
+
+    print(f"Loaded planning configuration from: {planning_data_path}")
+    print(f"Timestamp: {config['timestamp']}")
+
+    return config
+
+
 def main():
-    """Main function for testing visualization."""
-    # ==================== CONFIGURATION ====================
-    # Set to True to enable 3-method comparison (Original, Collinear, Bresenham)
-    # Set to False for standard visualization (2D path + original vs pruned)
-    COMPARE_METHODS = True
-
-    # Drone configuration
-    TARGET_ALTITUDE = 5
-    SAFETY_DISTANCE = 5
-
-    # Start and goal positions in grid coordinates
-    grid_start = (316, 445)
-    grid_goal = (427, 532)
-
-    # Optional custom point to mark on map (set to None to disable)
-    custom_point = None  # e.g., (600, 615)
-    # =======================================================
-
-    # Load data - use absolute path so script works from any directory
+    """Main function for path visualization."""
+    # Load colliders data
     print("Loading colliders data...")
     colliders_path = get_project_path('colliders.csv')
     data = np.loadtxt(colliders_path, delimiter=',', dtype='float64', skiprows=2)
 
-    # Create grid
-    print("Creating grid...")
-    grid, north_offset, east_offset = create_grid(data, TARGET_ALTITUDE, SAFETY_DISTANCE)
-    print(f"Grid shape: {grid.shape}")
-    print(f"Offsets - North: {north_offset}, East: {east_offset}")
+    # Load planning configuration (from file or use defaults)
+    print("\n" + "="*70)
+    config = load_planning_config()
+    print("="*70)
 
-    # Validate start and goal positions
+    # Extract configuration
+    grid_start = config['grid_start']
+    grid_goal = config['grid_goal']
+    intermediate_waypoints_grid = config['intermediate_waypoints_grid']
+    north_offset = config['north_offset']
+    east_offset = config['east_offset']
+    use_multi_waypoint = config['use_multi_waypoint']
+    TARGET_ALTITUDE = config['target_altitude']
+    SAFETY_DISTANCE = config['safety_distance']
+
+    print(f"\nConfiguration:")
+    print(f"  - Grid start: {grid_start}")
+    print(f"  - Grid goal: {grid_goal}")
+    print(f"  - Multi-waypoint: {use_multi_waypoint}")
+    print(f"  - Target altitude: {TARGET_ALTITUDE}m")
+    print(f"  - Safety distance: {SAFETY_DISTANCE}m")
+    if intermediate_waypoints_grid:
+        print(f"  - Intermediate waypoints: {len(intermediate_waypoints_grid)}")
+
+    # Create grid
+    print("\nCreating grid...")
+    grid, calc_north_offset, calc_east_offset = create_grid(data, TARGET_ALTITUDE, SAFETY_DISTANCE)
+    print(f"Grid shape: {grid.shape}")
+    print(f"Offsets - North: {calc_north_offset}, East: {calc_east_offset}")
+
+    # Verify offsets match (they should always match for same colliders.csv)
+    if calc_north_offset != north_offset or calc_east_offset != east_offset:
+        print(f"Warning: Calculated offsets ({calc_north_offset}, {calc_east_offset}) "
+              f"differ from saved offsets ({north_offset}, {east_offset})")
+        print("Using calculated offsets...")
+        north_offset = calc_north_offset
+        east_offset = calc_east_offset
+
+    # Validate positions
     grid_start = validate_position(grid_start, grid, "start")
     grid_goal = validate_position(grid_goal, grid, "goal")
 
-    # Find path
-    print(f"\nFinding path from {grid_start} to {grid_goal}...")
-    path, path_cost = a_star(grid, heuristic, grid_start, grid_goal)
+    if intermediate_waypoints_grid:
+        validated_waypoints = []
+        for i, wp_grid in enumerate(intermediate_waypoints_grid):
+            wp_grid = validate_position(wp_grid, grid, f"intermediate_waypoint_{i+1}")
+            validated_waypoints.append(wp_grid)
+        intermediate_waypoints_grid = validated_waypoints
 
-    if len(path) == 0:
-        print("No path found!")
-        return
+    # Execute path planning
+    print(f"\nExecuting path planning...")
+    if use_multi_waypoint and intermediate_waypoints_grid:
+        from planning_utils import a_star_multi_waypoints, heuristic_diagonal
+        path, _ = a_star_multi_waypoints(grid, heuristic_diagonal, grid_start, grid_goal,
+                                         intermediate_waypoints_grid, prune_segments=True)
+        print(f"Multi-waypoint path length: {len(path)} waypoints")
+    else:
+        path, _ = a_star(grid, heuristic, grid_start, grid_goal)
+        print(f"Original path length: {len(path)} waypoints")
+        path = prune_path_bresenham(grid, path)
+        print(f"Pruned path length: {len(path)} waypoints")
 
-    print(f"Original path: {len(path)} waypoints")
-    print(f"Path cost: {path_cost:.2f}")
-
-    # Prune path using Bresenham method
-    path_pruned = prune_path_bresenham(grid, path)
-    print(f"Pruned path: {len(path_pruned)} waypoints ({len(path_pruned)/len(path)*100:.1f}%)")
-
-    # Always generate standard visualizations
-    print("\nGenerating standard visualizations...")
+    # Generate visualization
+    print("\nGenerating visualization...")
     visualize_path_2d(data, grid, north_offset, east_offset, path,
-                      grid_start, grid_goal, path_cost, custom_point=custom_point)
-    visualize_path_comparison(data, grid, north_offset, east_offset,
-                              path, path_pruned, grid_start, grid_goal)
-
-    # Optionally generate 3-method comparison
-    if COMPARE_METHODS:
-        print("\nGenerating 3-method comparison...")
-
-        # Prune path using collinear method
-        path_collinear = prune_path(path)
-
-        print(f"Collinear pruned path: {len(path_collinear)} waypoints ({len(path_collinear)/len(path)*100:.1f}%)")
-
-        # Visualize 3-method comparison
-        visualize_path_comparison_3methods(grid, path, path_collinear, path_pruned,
-                                            grid_start, grid_goal, north_offset, east_offset)
-
-    print("\nDone!")
+                     grid_start, grid_goal,
+                     intermediate_waypoints=intermediate_waypoints_grid,
+                     show=True)
+    print("Done!")
 
 
 if __name__ == '__main__':

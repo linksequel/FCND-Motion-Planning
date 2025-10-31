@@ -13,10 +13,6 @@ from udacidrone.connection import MavlinkConnection
 from udacidrone.messaging import MsgID
 from udacidrone.frame_utils import global_to_local
 
-"""
-Hints:
-1.通过调整 grid_start 和 grid_goal 参数的值，您可以设置无人机的起点和终点。
-"""
 class States(Enum):
     MANUAL = auto()
     ARMING = auto()
@@ -120,6 +116,126 @@ class MotionPlanning(Drone):
         data = msgpack.dumps(self.waypoints)
         self.connection._master.write(data)
 
+    def _save_planning_data(self, grid_start, grid_goal, intermediate_waypoints_grid,
+                           north_offset, east_offset, use_multi_waypoint,
+                           target_altitude, safety_distance):
+        """
+        Save planning configuration to file for offline visualization.
+
+        Args:
+            grid_start: Start position in grid coordinates
+            grid_goal: Goal position in grid coordinates
+            intermediate_waypoints_grid: List of intermediate waypoints in grid coordinates (or None)
+            north_offset: North offset of grid origin
+            east_offset: East offset of grid origin
+            use_multi_waypoint: Whether multi-waypoint planning was used
+            target_altitude: Target altitude for planning
+            safety_distance: Safety distance for obstacle avoidance
+        """
+        import json
+        import os
+
+        planning_data = {
+            'grid_start': list(grid_start),
+            'grid_goal': list(grid_goal),
+            'intermediate_waypoints_grid': [list(wp) for wp in intermediate_waypoints_grid] if intermediate_waypoints_grid else None,
+            'north_offset': int(north_offset),
+            'east_offset': int(east_offset),
+            'use_multi_waypoint': use_multi_waypoint,
+            'target_altitude': target_altitude,
+            'safety_distance': safety_distance,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+
+        save_path = os.path.join('Logs', 'planning_data.json')
+        os.makedirs('Logs', exist_ok=True)
+
+        with open(save_path, 'w') as f:
+            json.dump(planning_data, f, indent=2)
+
+        print(f"Planning data saved to {save_path}")
+        print("Run 'python visualize/visualize_path.py' to visualize the path")
+
+    def _execute_path_planning(self, grid, grid_start, grid_goal, north_offset, east_offset,
+                               use_multi_waypoint=True):
+        """
+        Execute path planning using either multi-waypoint or standard A* algorithm.
+
+        Args:
+            grid: 2D occupancy grid
+            grid_start: Start position in grid coordinates
+            grid_goal: Goal position in grid coordinates
+            north_offset: North offset of grid origin
+            east_offset: East offset of grid origin
+            use_multi_waypoint: Whether to use multi-waypoint planning (default: True)
+
+        Returns:
+            tuple: (path, intermediate_waypoints_grid, intermediate_waypoints_global)
+                - path: List of waypoints in grid coordinates
+                - intermediate_waypoints_grid: List of intermediate waypoints in grid coordinates (or None)
+                - intermediate_waypoints_global: List of intermediate waypoints in global coordinates (or None)
+        """
+        # Choose heuristic function
+        # Options: heuristic (Euclidean), heuristic_manhattan, heuristic_diagonal, heuristic_chebyshev
+        chosen_heuristic = heuristic_diagonal  # Best for 8-directional movement
+        print(f"Using heuristic: {chosen_heuristic.__name__}")
+        print('Local Start and Goal: ', grid_start, grid_goal)
+
+        if use_multi_waypoint:
+            # ============================================================
+            # Multi-Waypoint Path Planning
+            # ============================================================
+            print("\n=== Multi-Waypoint Path Planning ===")
+
+            # Define intermediate waypoints (in lon/lat coordinates)
+            # IMPORTANT: Format is [longitude, latitude, altitude] to match global_to_local() requirements
+            # These points are chosen to create an interesting path through the environment
+            intermediate_waypoints_global = [
+                [-122.397250, 37.792980, 0],  # Waypoint 1: slightly north and west
+                [-122.396950, 37.793280, 0],  # Waypoint 2: further north and east
+                [-122.396650, 37.793380, 0],  # Waypoint 3: even further north and east
+            ]
+
+            # Convert intermediate waypoints from global to grid coordinates
+            intermediate_waypoints_grid = []
+            for i, wp_global in enumerate(intermediate_waypoints_global):
+                wp_local = global_to_local(wp_global, self.global_home)
+                wp_grid = (int(wp_local[0]) - north_offset, int(wp_local[1]) - east_offset)
+                wp_grid = validate_position(wp_grid, grid, f"intermediate_waypoint_{i+1}")
+                intermediate_waypoints_grid.append(wp_grid)
+                print(f"Intermediate waypoint {i+1}: Global (lon={wp_global[0]:.6f}, lat={wp_global[1]:.6f}) -> Grid {wp_grid}")
+
+            print(f"Will traverse {len(intermediate_waypoints_grid)} intermediate waypoints")
+
+            # Execute multi-waypoint A* search
+            # Note: a_star_multi_waypoints() prunes each segment internally to preserve waypoints
+            # Setting prune_segments=True ensures intermediate waypoints are NOT removed
+            path, _ = a_star_multi_waypoints(grid, chosen_heuristic, grid_start, grid_goal,
+                                             intermediate_waypoints_grid, prune_segments=True)
+            print('Final multi-waypoint path length:', len(path))
+            print('⚠️ Path preserves all intermediate waypoints (not pruned globally)')
+
+        else:
+            # ============================================================
+            # Standard A* Path Planning
+            # ============================================================
+            print("\n=== Standard A* Path Planning ===")
+
+            # Run A* search
+            path, _ = a_star(grid, chosen_heuristic, grid_start, grid_goal)
+            print('Original path length:', len(path))
+
+            # Prune path to minimize number of waypoints
+            path = prune_path_bresenham(grid, path)
+            print('Pruned path length:', len(path))
+
+            # No intermediate waypoints in standard mode
+            intermediate_waypoints_grid = None
+            intermediate_waypoints_global = None
+
+        return path, intermediate_waypoints_grid, intermediate_waypoints_global
+
+
     def plan_path(self):
         self.flight_state = States.PLANNING
         print("Searching for a path ...")
@@ -164,15 +280,12 @@ class MotionPlanning(Drone):
         print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
         # Define starting point on the grid (this is just grid center)
         # DONE: convert start position to current position rather than map center
+        # csv中经纬度对应：(316, 445)
         grid_start = (int(relative_pos_from_home[0]) - north_offset, int(relative_pos_from_home[1]) - east_offset)
 
         # Set goal as some arbitrary position on the grid
         # DONE: adapt to set YOUR goal as latitude / longitude position and convert
-        goal_lat = 37.793480  # Example latitude (about 100m north)
-        goal_lon = -122.396450  # Example longitude (about 100m east)
-        goal_global = [goal_lon, goal_lat, 0]
-        goal_local = global_to_local(goal_global, self.global_home)
-        grid_goal = (int(goal_local[0]) - north_offset, int(goal_local[1]) - east_offset)
+        grid_goal = (216, 740)
 
         # Validate start and goal positions
         print("Grid shape:", grid.shape)
@@ -184,63 +297,41 @@ class MotionPlanning(Drone):
         grid_goal = validate_position(grid_goal, grid, "goal")
 
         # ============================================================
-        # HW_1 Question 5: Multi-waypoint path planning with different heuristics
+        # Execute Path Planning
+        '''
+        【HW1：Question 5】: Implementing different heuristics for A* and the A* search for traversing 3 fixed points
+        '''
         # ============================================================
+        USE_MULTI_WAYPOINT = True
+        path, intermediate_waypoints_grid, intermediate_waypoints_global = self._execute_path_planning(
+            grid=grid,
+            grid_start=grid_start,
+            grid_goal=grid_goal,
+            north_offset=north_offset,
+            east_offset=east_offset,
+            use_multi_waypoint=USE_MULTI_WAYPOINT
+        )
 
-        # Define three fixed intermediate waypoints (in lon/lat coordinates)
-        # IMPORTANT: Format is [longitude, latitude, altitude] to match global_to_local() requirements
-        # These points are chosen to create an interesting path through the environment
-        intermediate_waypoints_global = [
-            [-122.397250, 37.792980, 0],  # Waypoint 1: slightly north and west
-            [-122.396950, 37.793280, 0],  # Waypoint 2: further north and east
-            [-122.396650, 37.793380, 0],  # Waypoint 3: even further north and east
-        ]
-
-        # Convert intermediate waypoints from global to grid coordinates
-        intermediate_waypoints_grid = []
-        for i, wp_global in enumerate(intermediate_waypoints_global):
-            wp_local = global_to_local(wp_global, self.global_home)
-            wp_grid = (int(wp_local[0]) - north_offset, int(wp_local[1]) - east_offset)
-            wp_grid = validate_position(wp_grid, grid, f"intermediate_waypoint_{i+1}")
-            intermediate_waypoints_grid.append(wp_grid)
-            print(f"Intermediate waypoint {i+1}: Global (lon={wp_global[0]:.6f}, lat={wp_global[1]:.6f}) -> Grid {wp_grid}")
-
-        # Choose whether to use multi-waypoint planning or standard A*
-        USE_MULTI_WAYPOINT = True  # Set True to use multi-waypoint planning, False for standard A*
-
-        # Choose heuristic function
-        # Options: heuristic (Euclidean), heuristic_manhattan, heuristic_diagonal, heuristic_chebyshev
-        chosen_heuristic = heuristic_diagonal  # Best for 8-directional movement
-        print(f"Using heuristic: {chosen_heuristic.__name__}")
-
-        # Run A* to find a path from start to goal
-        # DONE: add diagonal motions with a cost of sqrt(2) to your A* implementation 在planning_utils.Action中实现
-        # or move to a different search space such as a graph (not done here)
-        print('Local Start and Goal: ', grid_start, grid_goal)
-
-        if USE_MULTI_WAYPOINT:
-            print("\n=== Multi-Waypoint Path Planning ===")
-            print(f"Will traverse {len(intermediate_waypoints_grid)} intermediate waypoints")
-            # Note: a_star_multi_waypoints() prunes each segment internally to preserve waypoints
-            # Setting prune_segments=True ensures intermediate waypoints are NOT removed
-            path, _ = a_star_multi_waypoints(grid, chosen_heuristic, grid_start, grid_goal,
-                                             intermediate_waypoints_grid, prune_segments=True)
-            print('Final multi-waypoint path length:', len(path))
-            print('⚠️ Path preserves all intermediate waypoints (not pruned globally)')
-        else:
-            print("\n=== Standard A* Path Planning ===")
-            path, _ = a_star(grid, chosen_heuristic, grid_start, grid_goal)
-            # DONE: prune path to minimize number of waypoints
-            # ? (if you're feeling ambitious): Try a different approach altogether!
-            print('Original path length:', len(path))
-            path = prune_path_bresenham(grid, path)
-            print('Pruned path length:', len(path))
+        # ============================================================
+        # Save Planning Data for Offline Visualization
+        # 因为模拟器的障碍物可视化有问题，为了方便理解，我把算法投影到2D平面进行可视化
+        # ============================================================
+        # Save planning configuration to file for later visualization
+        # Run 'python visualize/visualize_path.py' to visualize
+        self._save_planning_data(
+            grid_start=grid_start,
+            grid_goal=grid_goal,
+            intermediate_waypoints_grid=intermediate_waypoints_grid,
+            north_offset=north_offset,
+            east_offset=east_offset,
+            use_multi_waypoint=USE_MULTI_WAYPOINT,
+            target_altitude=TARGET_ALTITUDE,
+            safety_distance=SAFETY_DISTANCE
+        )
 
         # Convert path to waypoints
         waypoints = [[p[0] + north_offset, p[1] + east_offset, TARGET_ALTITUDE, 0] for p in path]
-        # Set self.waypoints
         self.waypoints = waypoints
-        # DONE: send waypoints to sim (this is just for visualization of waypoints)
         self.send_waypoints()
 
     def start(self):
