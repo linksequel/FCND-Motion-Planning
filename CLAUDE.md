@@ -6,10 +6,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the FCND (Flying Car Nanodegree) Motion Planning project, which implements autonomous drone path planning in an urban environment using the Udacity drone simulator. The drone must navigate from a start position to a goal position while avoiding obstacles defined in a 2.5D map.
 
+## Installation (Industry Best Practice)
+
+This project follows Python packaging best practices for production environments. Instead of using `sys.path.insert()` hacks, the project is installed as a proper Python package.
+
+### Quick Setup
+
+```bash
+# Clone the repository (if not already done)
+cd FCND-Motion-Planning
+
+# Install the project in editable mode
+pip install -e .
+
+# Or install with development dependencies
+pip install -e ".[dev]"
+```
+
+### What This Does
+
+- **Editable mode (`-e`)**: Changes to source files are immediately reflected without reinstalling
+- **Proper module imports**: All modules (`planning_utils`, `visualize`, etc.) can be imported from anywhere
+- **No path hacks**: Eliminates the need for `sys.path.insert()` or `PYTHONPATH` manipulation
+- **Production-ready**: Same approach used in professional Python projects and deployed services
+
+### Alternative: Manual Dependencies
+
+If you prefer not to install the package:
+
+```bash
+pip install numpy matplotlib udacidrone
+```
+
+Then run scripts from the project root directory.
+
 ## Running the Code
 
 ### Prerequisites
-- Python environment with the `udacidrone` package installed (see [FCND-Term1-Starter-Kit](https://github.com/udacity/FCND-Term1-Starter-Kit))
+- Python 3.6+ environment (Python 3.6.3+ tested and working)
 - Motion Planning simulator from [FCND-Simulator-Releases](https://github.com/udacity/FCND-Simulator-Releases/releases)
 
 ### Running the Motion Planner

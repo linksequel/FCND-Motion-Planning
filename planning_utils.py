@@ -404,3 +404,118 @@ def prune_path(path):
             i += 1
 
     return pruned_path
+
+
+def bresenham(p1, p2):
+    """
+    Bresenham's line algorithm to get all grid cells between two points.
+
+    Args:
+        p1: tuple (row, col) - start point
+        p2: tuple (row, col) - end point
+
+    Returns:
+        list of tuples representing all cells along the line from p1 to p2
+    """
+    x1, y1 = p1[0], p1[1]
+    x2, y2 = p2[0], p2[1]
+
+    cells = []
+
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+
+    # Determine direction of line
+    sx = 1 if x1 < x2 else -1
+    sy = 1 if y1 < y2 else -1
+
+    err = dx - dy
+
+    x, y = x1, y1
+
+    while True:
+        cells.append((x, y))
+
+        if x == x2 and y == y2:
+            break
+
+        e2 = 2 * err
+
+        if e2 > -dy:
+            err -= dy
+            x += sx
+
+        if e2 < dx:
+            err += dx
+            y += sy
+
+    return cells
+
+
+def bresenham_check(grid, p1, p2):
+    """
+    Use Bresenham's line algorithm to check if the path between two points is collision-free.
+
+    Args:
+        grid: 2D numpy array representing the environment (0=free, 1=obstacle)
+        p1: tuple (row, col) - start point
+        p2: tuple (row, col) - end point
+
+    Returns:
+        True if the line from p1 to p2 is collision-free, False otherwise
+    """
+    cells = bresenham(p1, p2)
+
+    for cell in cells:
+        # Check if cell is within grid bounds
+        if (cell[0] < 0 or cell[0] >= grid.shape[0] or
+            cell[1] < 0 or cell[1] >= grid.shape[1]):
+            return False
+
+        # Check if cell is an obstacle
+        if grid[cell[0], cell[1]] == 1:
+            return False
+
+    return True
+
+
+def prune_path_bresenham(grid, path):
+    """
+    Prune path using Bresenham ray tracing algorithm.
+    This is more aggressive than collinearity pruning as it can skip waypoints
+    even when they are not perfectly collinear, as long as the direct line is collision-free.
+
+    Args:
+        grid: 2D numpy array representing the environment (0=free, 1=obstacle)
+        path: list of tuples representing waypoints
+
+    Returns:
+        list of pruned waypoints
+    """
+    if len(path) < 3:
+        return path
+
+    pruned = [path[0]]  # Always keep the start point
+    current_idx = 0
+
+    while current_idx < len(path) - 1:
+        # Try to connect to the farthest point possible
+        for next_idx in range(len(path) - 1, current_idx, -1):
+            if bresenham_check(grid, path[current_idx], path[next_idx]):
+                # Can connect directly to this far point
+                if next_idx != current_idx + 1:  # Only add if we're skipping waypoints
+                    pruned.append(path[next_idx])
+                    current_idx = next_idx
+                    break
+                else:  # Adjacent point, just move forward
+                    pruned.append(path[next_idx])
+                    current_idx = next_idx
+                    break
+        else:
+            # This shouldn't happen if the original path was valid
+            # But if it does, just add the next point
+            current_idx += 1
+            if current_idx < len(path):
+                pruned.append(path[current_idx])
+
+    return pruned

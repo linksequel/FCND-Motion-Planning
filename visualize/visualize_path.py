@@ -3,9 +3,35 @@ Path visualization utilities for drone motion planning.
 Provides functions to visualize planned paths on 2D obstacle maps.
 """
 
+import os
 import matplotlib.pyplot as plt
 import numpy as np
-from planning_utils import create_grid, a_star, heuristic, prune_path, validate_position
+
+# Standard imports - works after installing package with 'pip install -e .'
+from planning_utils import create_grid, a_star, heuristic, prune_path, validate_position, prune_path_bresenham
+
+
+def get_project_path(*paths):
+    """
+    Get absolute path relative to project root directory.
+    This ensures files can be found regardless of where the script is run from.
+
+    Args:
+        *paths: Path components to join (e.g., 'Logs', 'output.png')
+
+    Returns:
+        Absolute path to the file
+
+    Example:
+        >>> get_project_path('Logs', 'path.png')
+        'C:/Users/.../FCND-Motion-Planning/Logs/path.png'
+    """
+    # Get the directory where this script is located (visualize/)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Project root is parent directory
+    project_root = os.path.dirname(script_dir)
+    # Join with provided paths
+    return os.path.join(project_root, *paths)
 
 
 def calculate_boundaries(data):
@@ -125,7 +151,7 @@ def format_axis(ax, title, show_colorbar=False, max_height=200):
 
 
 def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
-                      grid_goal, path_cost=None, save_path='../Logs/path_visualization.png',
+                      grid_goal, path_cost=None, save_path=None,
                       custom_point=None):
     """
     Visualize 2D obstacle map with planned path.
@@ -139,9 +165,12 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
         grid_start: Start position in grid coordinates
         grid_goal: Goal position in grid coordinates
         path_cost: Optional total path cost
-        save_path: Path to save visualization image
+        save_path: Path to save visualization image (default: Logs/path_visualization.png)
         custom_point: Optional custom point to mark on the map (grid coordinates)
     """
+    if save_path is None:
+        save_path = get_project_path('Logs', 'path_visualization.png')
+
     fig, ax = plt.subplots(figsize=(16, 14))
 
     # Calculate boundaries
@@ -204,7 +233,7 @@ def visualize_path_2d(data, grid, north_offset, east_offset, path, grid_start,
 
 def visualize_path_comparison(data, grid, north_offset, east_offset,
                                path_original, path_pruned, grid_start, grid_goal,
-                               save_path='../Logs/path_comparison.png'):
+                               save_path=None):
     """
     Compare original and pruned paths side by side.
 
@@ -217,8 +246,11 @@ def visualize_path_comparison(data, grid, north_offset, east_offset,
         path_pruned: Pruned path with reduced waypoints
         grid_start: Start position in grid coordinates
         grid_goal: Goal position in grid coordinates
-        save_path: Path to save comparison image
+        save_path: Path to save comparison image (default: Logs/path_comparison.png)
     """
+    if save_path is None:
+        save_path = get_project_path('Logs', 'path_comparison.png')
+
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(28, 12))
 
     for ax, path, title in [(ax1, path_original, 'Original Path'),
@@ -237,15 +269,135 @@ def visualize_path_comparison(data, grid, north_offset, east_offset,
     plt.show()
 
 
+def visualize_path_comparison_3methods(grid, path_original, path_collinear, path_bresenham,
+                                        grid_start, grid_goal, north_offset=0, east_offset=0,
+                                        save_path=None):
+    """
+    Compare three path pruning methods: original, collinear, and Bresenham.
+
+    Args:
+        grid: 2D occupancy grid
+        path_original: Original path from A*
+        path_collinear: Path pruned using collinearity test
+        path_bresenham: Path pruned using Bresenham algorithm
+        grid_start: Start position in grid coordinates
+        grid_goal: Goal position in grid coordinates
+        north_offset: North offset of grid origin
+        east_offset: East offset of grid origin
+        save_path: Path to save comparison image (default: Logs/path_comparison_3methods.png)
+    """
+    if save_path is None:
+        save_path = get_project_path('Logs', 'path_comparison_3methods.png')
+
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 8))
+
+    # Prepare data for all three methods
+    methods = [
+        (ax1, path_original, 'Original Path', 'blue', 'red', 'o', 20),
+        (ax2, path_collinear, 'Collinear Pruned Path', 'green', 'blue', 'o', 50),
+        (ax3, path_bresenham, 'Bresenham Pruned Path', 'purple', 'red', 's', 100)
+    ]
+
+    for ax, path, title, line_color, marker_color, marker_shape, marker_size in methods:
+        if len(path) == 0:
+            continue
+
+        # Extract coordinates (North, East)
+        path_north = [p[0] + north_offset for p in path]
+        path_east = [p[1] + east_offset for p in path]
+
+        # Plot path line
+        ax.plot(path_east, path_north, color=line_color, linestyle='-',
+                linewidth=2 if title == 'Original Path' else 3,
+                alpha=0.5 if title == 'Original Path' else 0.7, label='Path')
+
+        # Plot waypoints
+        ax.scatter(path_east, path_north, c=marker_color, s=marker_size, zorder=5,
+                   marker=marker_shape, edgecolors='black',
+                   linewidth=1.5 if marker_size >= 50 else 0,
+                   label=f'Waypoints ({len(path)})')
+
+        # Plot start marker
+        start_north, start_east = grid_to_local(grid_start, (north_offset, east_offset))
+        ax.scatter(start_east, start_north, c='green', s=200, marker='o',
+                   edgecolors='black', linewidth=2, zorder=10, label='Start')
+
+        # Plot goal marker
+        goal_north, goal_east = grid_to_local(grid_goal, (north_offset, east_offset))
+        ax.scatter(goal_east, goal_north, c='orange', s=200, marker='*',
+                   edgecolors='black', linewidth=2, zorder=10, label='Goal')
+
+        # Format axis
+        ax.set_xlabel('East (grid units)', fontsize=12)
+        ax.set_ylabel('North (grid units)', fontsize=12)
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best', fontsize=10)
+        ax.set_aspect('equal')
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"\n3-method comparison saved to: {save_path}")
+
+    # Print statistics comparison
+    print(f"\n{'='*70}")
+    print(f"Path Optimization Statistics Comparison")
+    print(f"{'='*70}")
+    print(f"{'Method':<20} {'Waypoints':<12} {'Reduction':<15} {'Optimization %':<15}")
+    print(f"{'-'*70}")
+    print(f"{'Original Path':<20} {len(path_original):>8} pts {'-':>13} {'-':>15}")
+
+    collinear_reduction = len(path_original) - len(path_collinear)
+    collinear_percent = (1 - len(path_collinear) / len(path_original)) * 100
+    print(f"{'Collinear Pruning':<20} {len(path_collinear):>8} pts "
+          f"{collinear_reduction:>10} pts {collinear_percent:>14.1f}%")
+
+    bresenham_reduction = len(path_original) - len(path_bresenham)
+    bresenham_percent = (1 - len(path_bresenham) / len(path_original)) * 100
+    print(f"{'Bresenham Pruning':<20} {len(path_bresenham):>8} pts "
+          f"{bresenham_reduction:>10} pts {bresenham_percent:>14.1f}%")
+    print(f"{'='*70}")
+
+    # Compare pruning methods
+    print(f"\nPruning Methods Comparison:")
+    print(f"Bresenham vs Collinear:")
+    if len(path_bresenham) < len(path_collinear):
+        additional_reduction = len(path_collinear) - len(path_bresenham)
+        additional_percent = (1 - len(path_bresenham) / len(path_collinear)) * 100
+        print(f"  - Additional reduction: {additional_reduction} waypoints")
+        print(f"  - Additional optimization: {additional_percent:.1f}%")
+        print(f"  >> Bresenham method is more efficient!")
+    elif len(path_bresenham) > len(path_collinear):
+        print(f"  Note: Bresenham has more waypoints ({len(path_bresenham)} vs {len(path_collinear)})")
+    else:
+        print(f"  Both methods produce the same result")
+
+    plt.show()
+
+
 def main():
     """Main function for testing visualization."""
-    # Configuration
+    # ==================== CONFIGURATION ====================
+    # Set to True to enable 3-method comparison (Original, Collinear, Bresenham)
+    # Set to False for standard visualization (2D path + original vs pruned)
+    COMPARE_METHODS = True
+
+    # Drone configuration
     TARGET_ALTITUDE = 5
     SAFETY_DISTANCE = 5
 
-    # Load data
+    # Start and goal positions in grid coordinates
+    grid_start = (316, 445)
+    grid_goal = (427, 532)
+
+    # Optional custom point to mark on map (set to None to disable)
+    custom_point = None  # e.g., (600, 615)
+    # =======================================================
+
+    # Load data - use absolute path so script works from any directory
     print("Loading colliders data...")
-    data = np.loadtxt('../colliders.csv', delimiter=',', dtype='float64', skiprows=2)
+    colliders_path = get_project_path('colliders.csv')
+    data = np.loadtxt(colliders_path, delimiter=',', dtype='float64', skiprows=2)
 
     # Create grid
     print("Creating grid...")
@@ -253,16 +405,9 @@ def main():
     print(f"Grid shape: {grid.shape}")
     print(f"Offsets - North: {north_offset}, East: {east_offset}")
 
-    # Define start and goal
-    grid_start = (316, 445)
-    grid_goal = (427, 532)
-
-    # Validate start and goal positions using the abstracted method
+    # Validate start and goal positions
     grid_start = validate_position(grid_start, grid, "start")
     grid_goal = validate_position(grid_goal, grid, "goal")
-
-    # Get custom point from user
-    custom_point = (427, 532)
 
     # Find path
     print(f"\nFinding path from {grid_start} to {grid_goal}...")
@@ -272,19 +417,32 @@ def main():
         print("No path found!")
         return
 
-    # Prune path
-    path_pruned = prune_path(path)
-
     print(f"Original path: {len(path)} waypoints")
-    print(f"Pruned path: {len(path_pruned)} waypoints ({len(path_pruned)/len(path)*100:.1f}%)")
     print(f"Path cost: {path_cost:.2f}")
 
-    # Visualize
-    print("\nGenerating visualizations...")
+    # Prune path using Bresenham method
+    path_pruned = prune_path_bresenham(grid, path)
+    print(f"Pruned path: {len(path_pruned)} waypoints ({len(path_pruned)/len(path)*100:.1f}%)")
+
+    # Always generate standard visualizations
+    print("\nGenerating standard visualizations...")
     visualize_path_2d(data, grid, north_offset, east_offset, path,
                       grid_start, grid_goal, path_cost, custom_point=custom_point)
     visualize_path_comparison(data, grid, north_offset, east_offset,
                               path, path_pruned, grid_start, grid_goal)
+
+    # Optionally generate 3-method comparison
+    if COMPARE_METHODS:
+        print("\nGenerating 3-method comparison...")
+
+        # Prune path using collinear method
+        path_collinear = prune_path(path)
+
+        print(f"Collinear pruned path: {len(path_collinear)} waypoints ({len(path_collinear)/len(path)*100:.1f}%)")
+
+        # Visualize 3-method comparison
+        visualize_path_comparison_3methods(grid, path, path_collinear, path_pruned,
+                                            grid_start, grid_goal, north_offset, east_offset)
 
     print("\nDone!")
 
