@@ -5,7 +5,9 @@ from enum import Enum, auto
 
 import numpy as np
 
-from planning_utils import a_star, heuristic, create_grid, validate_position, prune_path_bresenham
+from planning_utils import (a_star, heuristic, heuristic_diagonal, heuristic_manhattan,
+                            heuristic_chebyshev, create_grid, validate_position,
+                            prune_path_bresenham, a_star_multi_waypoints)
 from udacidrone import Drone
 from udacidrone.connection import MavlinkConnection
 from udacidrone.messaging import MsgID
@@ -181,16 +183,58 @@ class MotionPlanning(Drone):
         grid_start = validate_position(grid_start, grid, "start")
         grid_goal = validate_position(grid_goal, grid, "goal")
 
+        # ============================================================
+        # HW_1 Question 5: Multi-waypoint path planning with different heuristics
+        # ============================================================
+
+        # Define three fixed intermediate waypoints (in lon/lat coordinates)
+        # IMPORTANT: Format is [longitude, latitude, altitude] to match global_to_local() requirements
+        # These points are chosen to create an interesting path through the environment
+        intermediate_waypoints_global = [
+            [-122.397250, 37.792980, 0],  # Waypoint 1: slightly north and west
+            [-122.396950, 37.793280, 0],  # Waypoint 2: further north and east
+            [-122.396650, 37.793380, 0],  # Waypoint 3: even further north and east
+        ]
+
+        # Convert intermediate waypoints from global to grid coordinates
+        intermediate_waypoints_grid = []
+        for i, wp_global in enumerate(intermediate_waypoints_global):
+            wp_local = global_to_local(wp_global, self.global_home)
+            wp_grid = (int(wp_local[0]) - north_offset, int(wp_local[1]) - east_offset)
+            wp_grid = validate_position(wp_grid, grid, f"intermediate_waypoint_{i+1}")
+            intermediate_waypoints_grid.append(wp_grid)
+            print(f"Intermediate waypoint {i+1}: Global (lon={wp_global[0]:.6f}, lat={wp_global[1]:.6f}) -> Grid {wp_grid}")
+
+        # Choose whether to use multi-waypoint planning or standard A*
+        USE_MULTI_WAYPOINT = True  # Set True to use multi-waypoint planning, False for standard A*
+
+        # Choose heuristic function
+        # Options: heuristic (Euclidean), heuristic_manhattan, heuristic_diagonal, heuristic_chebyshev
+        chosen_heuristic = heuristic_diagonal  # Best for 8-directional movement
+        print(f"Using heuristic: {chosen_heuristic.__name__}")
+
         # Run A* to find a path from start to goal
         # DONE: add diagonal motions with a cost of sqrt(2) to your A* implementation 在planning_utils.Action中实现
         # or move to a different search space such as a graph (not done here)
         print('Local Start and Goal: ', grid_start, grid_goal)
-        path, _ = a_star(grid, heuristic, grid_start, grid_goal)
-        # DONE: prune path to minimize number of waypoints
-        # ? (if you're feeling ambitious): Try a different approach altogether!
-        print('Original path length:', len(path))
-        path = prune_path_bresenham(grid, path)
-        print('Pruned path length:', len(path))
+
+        if USE_MULTI_WAYPOINT:
+            print("\n=== Multi-Waypoint Path Planning ===")
+            print(f"Will traverse {len(intermediate_waypoints_grid)} intermediate waypoints")
+            # Note: a_star_multi_waypoints() prunes each segment internally to preserve waypoints
+            # Setting prune_segments=True ensures intermediate waypoints are NOT removed
+            path, _ = a_star_multi_waypoints(grid, chosen_heuristic, grid_start, grid_goal,
+                                             intermediate_waypoints_grid, prune_segments=True)
+            print('Final multi-waypoint path length:', len(path))
+            print('⚠️ Path preserves all intermediate waypoints (not pruned globally)')
+        else:
+            print("\n=== Standard A* Path Planning ===")
+            path, _ = a_star(grid, chosen_heuristic, grid_start, grid_goal)
+            # DONE: prune path to minimize number of waypoints
+            # ? (if you're feeling ambitious): Try a different approach altogether!
+            print('Original path length:', len(path))
+            path = prune_path_bresenham(grid, path)
+            print('Pruned path length:', len(path))
 
         # Convert path to waypoints
         waypoints = [[p[0] + north_offset, p[1] + east_offset, TARGET_ALTITUDE, 0] for p in path]

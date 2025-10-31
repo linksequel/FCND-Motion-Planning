@@ -212,7 +212,108 @@ def validate_position(position, grid, position_name="position"):
     return validated_pos
 
 def heuristic(position, goal_position):
+    """
+    Default heuristic: Euclidean distance.
+    This is the straight-line distance between two points.
+    """
     return np.linalg.norm(np.array(position) - np.array(goal_position))
+
+
+def heuristic_manhattan(position, goal_position):
+    """
+    Manhattan distance heuristic (L1 norm).
+    Sum of absolute differences in coordinates.
+    Admissible for grid with only 4-directional movement (N, S, E, W).
+    """
+    return abs(position[0] - goal_position[0]) + abs(position[1] - goal_position[1])
+
+
+def heuristic_diagonal(position, goal_position):
+    """
+    Diagonal distance heuristic (also called Chebyshev distance + straight cost).
+    Better for 8-directional movement (including diagonals).
+
+    The idea: move diagonally as much as possible, then move straight.
+    Cost = sqrt(2) * min(dx, dy) + 1 * |dx - dy|
+    where dx = |x1 - x2| and dy = |y1 - y2|
+    """
+    dx = abs(position[0] - goal_position[0])
+    dy = abs(position[1] - goal_position[1])
+    # sqrt(2) ≈ 1.414 for diagonal moves, 1 for straight moves
+    return np.sqrt(2) * min(dx, dy) + abs(dx - dy)
+
+
+def heuristic_chebyshev(position, goal_position):
+    """
+    Chebyshev distance heuristic (L∞ norm).
+    Maximum of absolute differences in coordinates.
+    Admissible when diagonal movement costs the same as straight movement.
+    """
+    dx = abs(position[0] - goal_position[0])
+    dy = abs(position[1] - goal_position[1])
+    return max(dx, dy)
+
+def a_star_multi_waypoints(grid, h, start, goal, intermediate_waypoints, prune_segments=True):
+    """
+    A* search algorithm that traverses through multiple fixed waypoints.
+
+    Args:
+        grid: 2D numpy array representing the environment (0=free, 1=obstacle)
+        h: heuristic function h(position, goal_position)
+        start: tuple (row, col) representing start position
+        goal: tuple (row, col) representing final goal position
+        intermediate_waypoints: list of tuples [(row1, col1), (row2, col2), ...]
+                               representing intermediate points to visit in order
+        prune_segments: bool, if True, prune each segment individually to preserve waypoints
+                       (default: True)
+
+    Returns:
+        path: list of tuples representing the complete path from start to goal through all waypoints
+        path_cost: total cost of the complete path
+    """
+    # Create the sequence of waypoints: start -> wp1 -> wp2 -> ... -> goal
+    waypoint_sequence = [start] + intermediate_waypoints + [goal]
+
+    complete_path = []
+    total_cost = 0
+
+    # Plan path between each consecutive pair of waypoints
+    for i in range(len(waypoint_sequence) - 1):
+        current_start = waypoint_sequence[i]
+        current_goal = waypoint_sequence[i + 1]
+
+        print(f"Planning segment {i+1}/{len(waypoint_sequence)-1}: {current_start} -> {current_goal}")
+
+        # Validate waypoints
+        current_start = validate_position(current_start, grid, f"waypoint {i}")
+        current_goal = validate_position(current_goal, grid, f"waypoint {i+1}")
+
+        # Run A* for this segment
+        segment_path, segment_cost = a_star(grid, h, current_start, current_goal)
+
+        if not segment_path:
+            print(f"Failed to find path for segment {i+1}")
+            return [], 0
+
+        # Prune this segment individually to preserve waypoint connections
+        if prune_segments and len(segment_path) > 2:
+            original_length = len(segment_path)
+            segment_path = prune_path_bresenham(grid, segment_path)
+            print(f"  Segment {i+1} pruned: {original_length} -> {len(segment_path)} waypoints")
+
+        # Add segment to complete path (avoid duplicating connection points)
+        if i == 0:
+            complete_path.extend(segment_path)
+        else:
+            # Skip the first point as it's the same as the last point of previous segment
+            complete_path.extend(segment_path[1:])
+
+        total_cost += segment_cost
+        print(f"Segment {i+1} cost: {segment_cost:.2f}, path length: {len(segment_path)}")
+
+    print(f"Total path length: {len(complete_path)}, total cost: {total_cost:.2f}")
+    return complete_path, total_cost
+
 
 def iterative_astar(grid, h, start, goal, max_iterations=1000):
     """
