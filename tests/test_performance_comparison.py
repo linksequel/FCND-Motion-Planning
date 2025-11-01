@@ -3,7 +3,8 @@ Performance comparison between A* and IDA* on different grid sizes
 """
 import numpy as np
 import time
-from planning_utils import a_star, iterative_astar, heuristic
+from planning_utils import a_star, iterative_astar, heuristic, heuristic_diagonal, heuristic_manhattan
+
 
 def test_performance(grid_size, obstacle_density=0.1):
     """
@@ -107,7 +108,6 @@ if __name__ == "__main__":
     print("\n\n" + "=" * 70)
     print("RECOMMENDATION")
     print("=" * 70)
-    print("\nUse the smart_search() function in planning_utils.py")
     print("It automatically chooses the best algorithm based on grid size:")
     print("  - Large grids (>100k cells): A*")
     print("  - Small grids (<100k cells): IDA*")

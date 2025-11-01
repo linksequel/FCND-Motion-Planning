@@ -455,7 +455,7 @@ def iterative_astar(grid, h, start, goal, max_iterations=1000):
             return [], 0
 
         # Check if threshold is not increasing (stuck in same state)
-        if abs(next_threshold - prev_threshold) < 1e-6:
+        if abs(next_threshold - prev_threshold) < 1e-9:
             print('**********************')
             print('Failed to find a path!')
             print('Threshold stopped increasing - goal may be unreachable.')
